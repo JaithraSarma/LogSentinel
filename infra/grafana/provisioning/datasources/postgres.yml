@@ -1,0 +1,20 @@
+# Grafana — Auto-provision PostgreSQL datasource for anomaly feed panel
+apiVersion: 1
+
+datasources:
+  - name: PostgreSQL
+    type: postgres
+    access: proxy
+    url: LogSentinel-db:5432
+    database: LogSentinel
+    user: LogSentinel
+    editable: false
+    jsonData:
+      sslmode: "disable"
+      maxOpenConns: 5
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+      postgresVersion: 1600
+      timescaledb: false
+    secureJsonData:
+      password: "LogSentinel"
