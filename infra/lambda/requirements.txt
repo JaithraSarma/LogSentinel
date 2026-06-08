@@ -1,0 +1,2 @@
+# Lambda remediation function dependencies
+# Package these with handler.py for deployment
