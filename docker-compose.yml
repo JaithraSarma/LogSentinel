@@ -1,0 +1,122 @@
+# ==========================================================================
+# LogSentinel — Docker Compose for local development
+# ==========================================================================
+# Usage: docker compose up --build -d
+# ==========================================================================
+
+services:
+  # ---------- FastAPI Application ----------
+  LogSentinel-api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+    container_name: LogSentinel-api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://LogSentinel:LogSentinel@LogSentinel-db:5432/LogSentinel
+      - LOG_LEVEL=INFO
+      - ANOMALY_ERROR_RATE_THRESHOLD=0.15
+      - ANOMALY_LATENCY_THRESHOLD_MS=2000.0
+      - ANOMALY_WINDOW_SIZE=100
+      - ANOMALY_WINDOW_TIME_SECONDS=300
+      - ANOMALY_COOLDOWN_SECONDS=60
+      - REMEDIATION_ENABLED=true
+      - REMEDIATION_MODE=mock
+      - PROMETHEUS_ENABLED=true
+    depends_on:
+      LogSentinel-db:
+        condition: service_healthy
+    networks:
+      - LogSentinel-net
+    restart: unless-stopped
+
+  # ---------- PostgreSQL ----------
+  LogSentinel-db:
+    image: postgres:16-alpine
+    container_name: LogSentinel-db
+    environment:
+      - POSTGRES_USER=LogSentinel
+      - POSTGRES_PASSWORD=LogSentinel
+      - POSTGRES_DB=LogSentinel
+    ports:
+      - "5432:5432"
+    volumes:
+      - LogSentinel-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U LogSentinel -d LogSentinel"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - LogSentinel-net
+    restart: unless-stopped
+
+  # ---------- Prometheus ----------
+  LogSentinel-prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: LogSentinel-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - LogSentinel-prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+    depends_on:
+      - LogSentinel-api
+    networks:
+      - LogSentinel-net
+    restart: unless-stopped
+
+  # ---------- Grafana ----------
+  LogSentinel-grafana:
+    image: grafana/grafana:11.1.0
+    container_name: LogSentinel-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - LogSentinel-grafana-data:/var/lib/grafana
+    depends_on:
+      - LogSentinel-prometheus
+      - LogSentinel-db
+    networks:
+      - LogSentinel-net
+    restart: unless-stopped
+
+  # ---------- Seed Data (one-shot) ----------
+  LogSentinel-seed:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+    container_name: LogSentinel-seed
+    entrypoint: ["python", "scripts/seed_data.py"]
+    environment:
+      - API_URL=http://LogSentinel-api:8000
+      - SEED_DURATION_SECONDS=120
+      - SEED_RATE_PER_SECOND=5
+      - SEED_ANOMALY_PROBABILITY=0.08
+    depends_on:
+      LogSentinel-api:
+        condition: service_healthy
+    networks:
+      - LogSentinel-net
+    restart: "no"
+    profiles:
+      - seed
+
+volumes:
+  LogSentinel-db-data:
+  LogSentinel-prometheus-data:
+  LogSentinel-grafana-data:
+
+networks:
+  LogSentinel-net:
+    driver: bridge
