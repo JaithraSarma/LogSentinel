@@ -1,0 +1,15 @@
+# LogSentinel — Prometheus Configuration
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "LogSentinel-api"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["LogSentinel-api:8000"]
+        labels:
+          service: "LogSentinel"
+          environment: "local"
+    scrape_interval: 10s
